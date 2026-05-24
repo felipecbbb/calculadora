@@ -1,0 +1,145 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  html {
+    overflow-x: clip;
+  }
+
+  body {
+    @apply bg-bg font-sans text-text;
+    overflow-x: clip;
+  }
+
+  *:focus-visible {
+    @apply outline-none ring-2 ring-brand-accent ring-offset-2 ring-offset-bg;
+  }
+
+  /* Mejor accesibilidad por defecto en headings.
+     NO forzamos color aquí: dejamos que cada heading herede de su sección
+     (text-white sobre hero navy, text-text sobre fondo claro). Forzar color
+     aquí provoca que headings dentro de hero oscuro se vean negros. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-display tracking-tight;
+  }
+}
+
+@layer components {
+  .container-page {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+
+  .btn {
+    @apply inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-bold transition-colors disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply btn bg-brand-primary text-white hover:bg-brand-deep;
+  }
+
+  .btn-accent {
+    @apply btn bg-brand-accent text-white hover:bg-brand-primary;
+  }
+
+  .btn-ghost {
+    @apply btn text-brand-primary hover:bg-brand-surface;
+  }
+}
+
+/* ─── Google Places Autocomplete ─────────────────────────────────
+   El desplegable .pac-container se inyecta directo a <body>. Por defecto
+   hereda el ancho del input que lo dispara (puede quedar muy estrecho
+   en píldoras compactas y truncar el texto a "..."). Forzamos un ancho
+   mínimo legible y lo estilizamos con la marca. */
+.pac-container {
+  z-index: 9999 !important;
+  min-width: 320px !important;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  /* Sombra suave estilo dropdown nativo, NO halo. Antes era 40px blur con
+   * color cerca-negro (brand-deep) y se veía como un aura oscura alrededor. */
+  box-shadow:
+    0 4px 12px rgba(15, 23, 42, 0.08),
+    0 1px 3px rgba(15, 23, 42, 0.04);
+  font-family: var(--font-manrope), system-ui, sans-serif;
+  margin-top: 4px;
+  padding: 4px;
+  background: #ffffff;
+}
+.pac-item {
+  border-radius: 8px;
+  border-top: none;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #000926;
+  white-space: normal;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.pac-item:hover,
+.pac-item-selected {
+  background-color: #d6e6f3;
+}
+.pac-item-query {
+  color: #000926;
+  font-weight: 600;
+  font-size: 13px;
+  padding-right: 4px;
+}
+.pac-item span:not(.pac-icon):not(.pac-item-query) {
+  color: #475569;
+  font-size: 12px;
+}
+.pac-matched {
+  color: #0e52b8;
+  font-weight: 700;
+}
+.pac-icon {
+  margin-top: 2px;
+  margin-right: 0;
+  flex: none;
+}
+
+/* Keyframes para entrada escalonada de las cards del AuthShowcase. */
+@keyframes fade-up {
+  0% {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Barra de carga superior usada por el loading.tsx global. */
+@keyframes loading-bar {
+  0% {
+    transform: translateX(-100%) scaleX(0.5);
+  }
+  50% {
+    transform: translateX(50%) scaleX(1);
+  }
+  100% {
+    transform: translateX(200%) scaleX(0.5);
+  }
+}

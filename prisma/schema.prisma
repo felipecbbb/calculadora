@@ -1,0 +1,31 @@
+// Schema mínimo — solo la tabla BoeVehicle (lectura). Compartida con el
+// proyecto principal vía la misma DATABASE_URL.
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearchPostgres"]
+  binaryTargets   = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model BoeVehicle {
+  id           String   @id @default(cuid())
+  year         Int
+  source       String   @default("BOE")
+  make         String
+  model        String
+  variant      String?
+  cvf          Decimal  @db.Decimal(5, 2)
+  cv           Decimal  @db.Decimal(6, 2)
+  baseValueEur Int
+
+  createdAt DateTime @default(now())
+
+  @@unique([year, source, make, model, variant])
+  @@index([make, model])
+  @@index([source, year])
+}
