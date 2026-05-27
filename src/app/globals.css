@@ -70,17 +70,27 @@
 .pac-container {
   z-index: 9999 !important;
   min-width: 320px !important;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  /* Sombra suave estilo dropdown nativo, NO halo. Antes era 40px blur con
-   * color cerca-negro (brand-deep) y se veía como un aura oscura alrededor. */
+  border-radius: 12px !important;
+  border: 1px solid #e2e8f0 !important;
+  /* Google Maps inyecta box-shadow inline al .pac-container que produce
+   * un halo gris muy grande detrás del dropdown. Forzamos override con
+   * !important + reseteamos filter para evitar drop-shadow heredados. */
   box-shadow:
     0 4px 12px rgba(15, 23, 42, 0.08),
-    0 1px 3px rgba(15, 23, 42, 0.04);
+    0 1px 3px rgba(15, 23, 42, 0.04) !important;
+  filter: none !important;
+  -webkit-filter: none !important;
   font-family: var(--font-manrope), system-ui, sans-serif;
   margin-top: 4px;
   padding: 4px;
-  background: #ffffff;
+  background: #ffffff !important;
+}
+/* Algunos navegadores aplican backdrop o ::before en el contenedor del
+ * dropdown. Aseguramos que no se renderice nada detrás. */
+.pac-container::before,
+.pac-container::after {
+  display: none !important;
+  content: none !important;
 }
 .pac-item {
   border-radius: 8px;

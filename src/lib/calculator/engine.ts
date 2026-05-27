@@ -310,9 +310,20 @@ export type CalculatorInput = {
    * depreciación BOE pueda aplicar el suelo del 50% a clásicos cuando se
    * detecte por antigüedad. */
   vehicleType?: CalcVehicleType;
+  /** "new" indica que el usuario eligió expresamente coche nuevo en el
+   *  formulario. Lo usamos para forzar la línea de IVA 21% en el desglose
+   *  aunque la antigüedad/km no encajen con la regla AEAT de "nuevo a
+   *  efectos fiscales" (la regla legal sigue rigiendo el cálculo del
+   *  IEDMT vía `isNewVehicle`). */
+  vehicleCondition?: "new" | "used";
   make: string;
   model: string;
   purchasePriceEur: number;
+  /** Base imponible del IEDMT introducida explícitamente por el usuario en
+   *  el flujo coche usado fuera de BOE/BON. Cuando está presente, sustituye
+   *  a `purchasePriceEur` solo para el cálculo del IEDMT — el desglose final
+   *  sigue mostrando `purchasePriceEur` como "Precio del coche". */
+  iedmtBaseEur?: number;
   /** Valor venal a nuevo del BOE 2026 — base para IEDMT con depreciación. */
   boeBaseValueEur?: number;
   /** Valor del BON Navarra 2026 para el mismo modelo. Se aplica como base
@@ -485,10 +496,15 @@ export function calculate(input: CalculatorInput): CalculatorResult {
 
   // VM = valor de mercado tras minoración. Solo en modo BOE-usado aplica
   // % depreciación del Anexo IV. En el resto de casos vmEur es el precio
-  // que el usuario introduce en la factura.
-  const vmEur = effectiveBoeMode
-    ? (tableBaseValueEur as number) * depFactor
-    : input.purchasePriceEur;
+  // que el usuario introduce. En el flujo "coche usado fuera de BOE/BON"
+  // el usuario rellena un campo separado (`iedmtBaseEur`) que es la base
+  // imponible del IEDMT — distinta del precio del coche que va al desglose.
+  // Si `iedmtBaseEur` está presente lo usamos; si no, fallback al precio.
+  const iedmtBaseFromInput =
+    input.iedmtBaseEur != null && input.iedmtBaseEur > 0
+      ? input.iedmtBaseEur
+      : input.purchasePriceEur;
+  const vmEur = effectiveBoeMode ? (tableBaseValueEur as number) * depFactor : iedmtBaseFromInput;
   const vmCents = Math.round(vmEur * 100);
 
   // Para la fórmula simplificada (precio × tipoCO₂), si la factura lleva
@@ -633,10 +649,15 @@ export function calculate(input: CalculatorInput): CalculatorResult {
   // — IVA 21% para coches NUEVOS —
   // El usuario introduce el precio del coche SIN IVA. Sumamos el 21% como
   // partida independiente del desglose y la incluimos en el total a pagar
-  // (precio neto × 0,21). En usados, IVA no aplica como línea — va dentro
-  // del cálculo del IEDMT cuando hay factura deducible.
-  const invoiceVatCents = isNewVehicle ? Math.round(purchaseCents * 0.21) : 0;
-  if (isNewVehicle && invoiceVatCents > 0) {
+  // (precio neto × 0,21). Disparador = vehicleCondition === "new" del
+  // formulario (decisión del usuario), no `isNewVehicle` (regla AEAT por
+  // antigüedad/km) — pueden divergir cuando el usuario marca "nuevo" pero
+  // los datos técnicos no encajan en la ventana de <6 meses o <6.000 km.
+  // En usados, IVA no aplica como línea — va dentro del cálculo del IEDMT
+  // cuando hay factura deducible.
+  const isUserMarkedNew = input.vehicleCondition === "new";
+  const invoiceVatCents = isUserMarkedNew ? Math.round(purchaseCents * 0.21) : 0;
+  if (isUserMarkedNew && invoiceVatCents > 0) {
     notes.push(
       "Coche nuevo: añadimos el IVA al 21% sobre el precio que has introducido (precio neto). El importe se suma al total a pagar.",
     );

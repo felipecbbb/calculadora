@@ -163,6 +163,25 @@ export function CalculatorForm({ isAuthenticated }: { isAuthenticated: boolean }
       .catch(() => setMakes([]));
   }, []);
 
+  // Bloquea el comportamiento por defecto del navegador en inputs numéricos:
+  // si el cursor está sobre un input[type=number] enfocado y el usuario hace
+  // scroll, el valor sube/baja sin querer. Cancelamos ese wheel para todos
+  // los inputs numéricos del form de una vez.
+  useEffect(() => {
+    function onWheel(e: WheelEvent) {
+      const target = e.target as HTMLElement | null;
+      if (
+        target instanceof HTMLInputElement &&
+        target.type === "number" &&
+        document.activeElement === target
+      ) {
+        e.preventDefault();
+      }
+    }
+    document.addEventListener("wheel", onWheel, { passive: false });
+    return () => document.removeEventListener("wheel", onWheel);
+  }, []);
+
   // ─── Persistencia del borrador en localStorage ───
   // Restaurar al montar (si hay) y guardar a medida que el usuario
   // teclea (debounced). Si el usuario sale y vuelve, conserva todo lo
@@ -1220,8 +1239,8 @@ export function CalculatorForm({ isAuthenticated }: { isAuthenticated: boolean }
                         <strong className="text-brand-deep">AutoScout</strong> verás un solo precio
                         con subíndice <strong>¹</strong> o la etiqueta{" "}
                         <strong>&quot;IVA deducible&quot;</strong>; en tal caso divide el precio
-                        entre el IVA del país de venta (España 1,21 · Alemania 1,19 · Italia 1,22…)
-                        para obtener el valor neto y mete ese aquí.
+                        entre el IVA del país de venta (Alemania 1,19 · Bélgica 1,21 · Francia
+                        1,20…) para obtener el valor neto y mete ese aquí.
                       </p>
                       <p>
                         Si es <strong className="text-brand-deep">REBU</strong> el IVA no es
@@ -1569,7 +1588,7 @@ export function CalculatorForm({ isAuthenticated }: { isAuthenticated: boolean }
                 />
               </Field>
               {values.vehicleCondition !== "new" && (
-                <InvoiceVatToggle priceVal={values.purchasePriceEur} setValue={setValue} />
+                <InvoiceVatToggle iedmtBaseVal={values.iedmtBaseEur} setValue={setValue} />
               )}
             </div>
           )}
@@ -2046,8 +2065,8 @@ function ResultPanel({
           </strong>
         </div>
         <p className="mt-3 text-xs text-white/70">
-          Incluye precio del coche, impuesto de matriculación (576), IVTM 1ª anualidad, transporte,
-          placas, ITV, tasas DGT y servicios opcionales seleccionados.
+          Incluye precio del coche, impuesto de matriculación (576), IVTM (impuesto de circulación,
+          1ª anualidad), transporte, placas, ITV, tasas DGT y servicios opcionales seleccionados.
         </p>
       </div>
 
@@ -2096,7 +2115,7 @@ function ResultPanel({
             />
           )}
           <Row
-            label="IVTM (1ª anualidad)"
+            label="IVTM · Impuesto de circulación (1ª anualidad)"
             value={b.ivtmAnnualCents}
             sub="Cuota mínima estatal · cada ayuntamiento aplica coeficiente hasta 2x"
           />
@@ -2249,10 +2268,10 @@ const PROGRESS_PHASES = [
 // se reemplazaron por texto narrativo más directo. El botón "i" abre el
 // modal con capturas reales de cada caso.
 function InvoiceVatToggle({
-  priceVal,
+  iedmtBaseVal,
   setValue,
 }: {
-  priceVal: number | undefined;
+  iedmtBaseVal: number | undefined;
   setValue: ReturnType<typeof useForm<CalculatorFormValues>>["setValue"];
 }) {
   const [helpOpen, setHelpOpen] = useState(false);
@@ -2288,10 +2307,10 @@ function InvoiceVatToggle({
             inputMode="numeric"
             placeholder="Mete la cifra que aplica según tu caso"
             className={inputClass}
-            value={priceVal && priceVal > 0 ? priceVal : ""}
+            value={iedmtBaseVal && iedmtBaseVal > 0 ? iedmtBaseVal : ""}
             onChange={(e) => {
               const v = e.target.valueAsNumber;
-              setValue("purchasePriceEur", Number.isFinite(v) ? v : 0, {
+              setValue("iedmtBaseEur", Number.isFinite(v) ? v : undefined, {
                 shouldValidate: true,
               });
             }}
@@ -2304,8 +2323,8 @@ function InvoiceVatToggle({
               <strong>menor</strong> para rellenar este campo. En{" "}
               <strong className="text-brand-deep">AutoScout</strong> verás un solo precio con
               subíndice <strong>¹</strong> o la etiqueta <strong>&quot;IVA deducible&quot;</strong>;
-              en tal caso divide el precio entre el IVA del país de venta (España 1,21 · Alemania
-              1,19 · Italia 1,22…) para obtener el valor neto y mete ese aquí.
+              en tal caso divide el precio entre el IVA del país de venta (Alemania 1,19 · Bélgica
+              1,21 · Francia 1,20…) para obtener el valor neto y mete ese aquí.
             </p>
             <p>
               Si es <strong className="text-brand-deep">REBU</strong> el IVA no es deducible y verás

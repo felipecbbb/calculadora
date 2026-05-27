@@ -17,6 +17,11 @@ export const calculatorSchema = z.object({
     .number({ invalid_type_error: "Indica el precio" })
     .min(500, "Precio demasiado bajo")
     .max(2_000_000, "Precio fuera de rango"),
+  /** Base imponible del IEDMT que el usuario introduce en el campo
+   *  "Base para el impuesto de matriculación" del flujo coche usado
+   *  no listado en BOE/BON. Es independiente de `purchasePriceEur` para
+   *  que el desglose final pueda mostrar ambos valores sin pisarse. */
+  iedmtBaseEur: z.number().min(0).max(2_000_000).optional(),
   boeBaseValueEur: z.number().min(0).max(2_000_000).optional(),
   /** Valor del Anexo I del BON Navarra para el mismo modelo. Solo se rellena
    *  cuando el match BOE→BON existe; si la CCAA elegida es ES-NC, el engine
