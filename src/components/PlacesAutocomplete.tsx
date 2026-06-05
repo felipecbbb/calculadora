@@ -1,40 +1,25 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
-import { ensureMapsConfigured, importLibrary, type RoutePlace } from "@/lib/google-maps";
+import { type RoutePlace } from "@/lib/google-maps";
+import { resolvePlaceAction, searchPlacesAction, type PlaceSuggestion } from "@/lib/places-actions";
 
-const ALLOWED_COUNTRIES = [
-  "es",
-  "pt",
-  "fr",
-  "be",
-  "nl",
-  "de",
-  "it",
-  "gb",
-  "cz",
-  "pl",
-  "ro",
-  "se",
-  "dk",
-];
-
-/**
- * Input text con autocomplete de Google Places restringido a los 14 países
- * contractuales. Usado en hero + cualquier sitio donde haga falta selector
- * de dirección sin mapa visible.
- */
 /**
  * Tipo de lugar a sugerir:
- *   - "cities" → solo poblaciones (no calles ni números). Útil para hero
- *     y calculadora donde el usuario piensa en términos de ciudad.
- *   - "address" → direcciones precisas (calle + número). Útil para
- *     wizards de transporte donde la ruta importa.
- *   - "geocode" (default por compatibilidad) → cualquier resultado.
+ *   - "cities" → localidades y códigos postales (hero, calculadora).
+ *   - "address" → direcciones precisas (calle + número), para wizards de ruta.
+ *   - "geocode" (default) → cualquier resultado geocodificable.
  */
 export type PlacesKind = "cities" | "address" | "geocode";
 
+/**
+ * Input con autocomplete de direcciones. Pinta su propio desplegable a partir
+ * de la API REST de Google Places (vía server actions), porque el widget JS
+ * legacy de Google (`google.maps.places.Autocomplete`) dejó de estar disponible
+ * para proyectos de Cloud creados después del 1 de marzo de 2025. Ver
+ * `@/lib/places-actions`.
+ */
 export function PlacesAutocomplete({
   value,
   onChange,
@@ -59,174 +44,157 @@ export function PlacesAutocomplete({
   autoComplete?: string;
   disabled?: boolean;
   kind?: PlacesKind;
-  /** Lista de códigos ISO de país (2 letras minúsculas) a la que se
-   *  restringen las sugerencias. `undefined` = sin restricción (mundial),
-   *  `[]` = igual que undefined. Default: 14 países contractuales. */
+  /** ISO de país (2 letras minúsculas) a los que se restringe la búsqueda.
+   *  `undefined` o `[]` = búsqueda mundial. */
   countries?: string[];
 } & Omit<React.InputHTMLAttributes<HTMLInputElement>, "onChange" | "value">) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const [initError, setInitError] = useState<string | null>(null);
+  const [text, setText] = useState(value?.address ?? "");
+  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(-1);
+  const sessionRef = useRef<string | null>(null);
+  // Evita relanzar la búsqueda cuando el cambio de `text` viene de seleccionar
+  // una sugerencia (no de teclear).
+  const skipSearch = useRef(false);
+  const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const listboxId = useId();
 
+  const countriesKey = (countries ?? []).join(",");
+
+  // Refleja el valor seleccionado desde fuera (p. ej. al resetear el form).
   useEffect(() => {
-    if (disabled) return; // No inicializa autocomplete si está deshabilitado
-    let mounted = true;
-    let listenerHandle: google.maps.MapsEventListener | null = null;
-    setInitError(null);
+    skipSearch.current = true;
+    setText(value?.address ?? "");
+  }, [value?.address]);
 
-    (async () => {
-      try {
-        ensureMapsConfigured();
-        const { Autocomplete } = await importLibrary("places");
-        if (!mounted || !inputRef.current) return;
+  function ensureSession(): string {
+    if (!sessionRef.current) {
+      sessionRef.current =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+    return sessionRef.current;
+  }
 
-        // Mapeo de nuestro `kind` semántico a los `types` de Google.
-        // "(cities)" filtra a localidades (locality, postal_town, etc.).
-        // "address" filtra a direcciones precisas con número.
-        const googleTypes =
-          kind === "cities" ? ["(cities)"] : kind === "address" ? ["address"] : ["geocode"];
-
-        // Restricción de países: si el caller no especifica `countries`
-        // aplicamos los 14 contractuales por defecto. Para búsquedas mundiales
-        // (origen/destino del transporte de un coche, que puede venir de
-        // cualquier sitio) el caller pasa countries={[]} explícitamente.
-        const restrict =
-          countries === undefined ? ALLOWED_COUNTRIES : countries.length > 0 ? countries : null;
-
-        const ac = new Autocomplete(inputRef.current, {
-          fields: ["formatted_address", "geometry", "address_components"],
-          types: googleTypes,
-          ...(restrict ? { componentRestrictions: { country: restrict } } : {}),
-        });
-
-        listenerHandle = ac.addListener("place_changed", () => {
-          const place = ac.getPlace();
-          if (place.geometry?.location) {
-            const components = place.address_components ?? [];
-            onChange({
-              address: place.formatted_address ?? inputRef.current?.value ?? "",
-              lat: place.geometry.location.lat(),
-              lng: place.geometry.location.lng(),
-              countryCode: components.find((c: google.maps.GeocoderAddressComponent) =>
-                c.types.includes("country"),
-              )?.short_name,
-              postalCode: components.find((c: google.maps.GeocoderAddressComponent) =>
-                c.types.includes("postal_code"),
-              )?.long_name,
-            });
-          }
-        });
-      } catch (err) {
-        console.error("[PlacesAutocomplete] failed", err);
-        if (mounted) {
-          // Mensaje user-visible solo si parece problema de configuración —
-          // un fallo de red transitorio no merece la pena banderearlo.
-          const msg = err instanceof Error ? err.message : String(err);
-          if (/api[_ ]?key|configurada|configured/i.test(msg)) {
-            setInitError("Autocompletado no disponible. Introduce la dirección a mano.");
-          }
-        }
-      }
-    })();
-
-    return () => {
-      mounted = false;
-      if (listenerHandle) listenerHandle.remove();
-    };
+  // Búsqueda con debounce mientras el usuario teclea.
+  useEffect(() => {
+    if (disabled) return;
+    if (skipSearch.current) {
+      skipSearch.current = false;
+      return;
+    }
+    const q = text.trim();
+    if (q.length < 2) {
+      setSuggestions([]);
+      setOpen(false);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      const results = await searchPlacesAction({
+        query: q,
+        kind,
+        countries,
+        sessionToken: ensureSession(),
+      });
+      setSuggestions(results);
+      setActive(-1);
+      setOpen(results.length > 0);
+    }, 300);
+    return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [disabled, kind, countries]);
+  }, [text, disabled, kind, countriesKey]);
+
+  async function pick(s: PlaceSuggestion) {
+    if (blurTimer.current) clearTimeout(blurTimer.current);
+    skipSearch.current = true;
+    setText(s.description);
+    setOpen(false);
+    setSuggestions([]);
+    const place = await resolvePlaceAction({
+      placeId: s.placeId,
+      sessionToken: ensureSession(),
+    });
+    sessionRef.current = null; // cierra la sesión de facturación
+    if (place) {
+      skipSearch.current = true;
+      setText(place.address || s.description);
+      onChange(place);
+    }
+  }
 
   return (
-    <div className={className}>
+    <div className={className} style={{ position: "relative" }}>
       <input
-        ref={inputRef}
-        key={disabled ? "disabled" : "enabled"}
         type="text"
-        defaultValue={value?.address ?? ""}
+        value={text}
         placeholder={placeholder}
         className={inputClassName}
         id={id}
         name={name}
         disabled={disabled}
         autoComplete={autoComplete ?? "off"}
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={listboxId}
+        aria-autocomplete="list"
         onChange={(e) => {
-          if (e.target.value === "" && value) {
-            onChange(undefined);
-          }
+          const v = e.target.value;
+          setText(v);
+          if (v.trim() === "" && value) onChange(undefined);
         }}
-        onKeyDown={async (e) => {
-          if (e.key !== "Enter") return;
-          const input = e.currentTarget;
-          const text = input.value.trim();
-          if (!text) return;
-          e.preventDefault();
-
-          // Estrategia 1: click sintético en el `.pac-item` del dropdown
-          // visible. Funciona cuando Google Places muestra sugerencias en
-          // el DOM (mayoría de casos en escritorio).
-          const containers = Array.from(document.querySelectorAll<HTMLElement>(".pac-container"));
-          const visible = containers.find((c) => c.offsetParent !== null);
-          const firstItem = visible?.querySelector<HTMLElement>(".pac-item");
-          if (firstItem) {
-            firstItem.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-            firstItem.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
-            firstItem.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        onFocus={() => {
+          if (suggestions.length > 0) setOpen(true);
+        }}
+        onBlur={() => {
+          blurTimer.current = setTimeout(() => setOpen(false), 150);
+        }}
+        onKeyDown={(e) => {
+          if (!open || suggestions.length === 0) {
+            if (e.key === "Enter") e.preventDefault();
             return;
           }
-
-          // Estrategia 2 (fallback): si el dropdown no está montado, usamos
-          // la API programática `AutocompleteService` + `PlacesService` para
-          // resolver la primera predicción a coordenadas y disparar onChange.
-          // Esto cubre el caso edge en mobile o cuando el usuario es muy
-          // rápido (Enter antes de que Google renderice el dropdown).
-          try {
-            const places = await importLibrary("places");
-            const autoSvc = new places.AutocompleteService();
-            const googleTypes =
-              kind === "cities" ? ["(cities)"] : kind === "address" ? ["address"] : ["geocode"];
-            const restrict =
-              countries === undefined ? ALLOWED_COUNTRIES : countries.length > 0 ? countries : null;
-            const req: google.maps.places.AutocompletionRequest = {
-              input: text,
-              types: googleTypes,
-              ...(restrict ? { componentRestrictions: { country: restrict } } : {}),
-            };
-            autoSvc.getPlacePredictions(req, (preds, status) => {
-              if (status !== google.maps.places.PlacesServiceStatus.OK || !preds || !preds[0]) {
-                return;
-              }
-              const first = preds[0];
-              const detailsSvc = new places.PlacesService(document.createElement("div"));
-              detailsSvc.getDetails(
-                {
-                  placeId: first.place_id,
-                  fields: ["formatted_address", "geometry", "address_components"],
-                },
-                (place, detailStatus) => {
-                  if (
-                    detailStatus !== google.maps.places.PlacesServiceStatus.OK ||
-                    !place?.geometry?.location
-                  ) {
-                    return;
-                  }
-                  const components = place.address_components ?? [];
-                  if (input) input.value = place.formatted_address ?? text;
-                  onChange({
-                    address: place.formatted_address ?? text,
-                    lat: place.geometry.location.lat(),
-                    lng: place.geometry.location.lng(),
-                    countryCode: components.find((c) => c.types.includes("country"))?.short_name,
-                    postalCode: components.find((c) => c.types.includes("postal_code"))?.long_name,
-                  });
-                },
-              );
-            });
-          } catch (err) {
-            console.warn("[PlacesAutocomplete] enter fallback failed", err);
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setActive((a) => Math.min(a + 1, suggestions.length - 1));
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setActive((a) => Math.max(a - 1, 0));
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            const choice = suggestions[active >= 0 ? active : 0];
+            if (choice) void pick(choice);
+          } else if (e.key === "Escape") {
+            setOpen(false);
           }
         }}
         {...rest}
       />
-      {initError && <span className="mt-1 block text-[11px] text-text-muted">{initError}</span>}
+      {open && suggestions.length > 0 && (
+        <ul
+          id={listboxId}
+          role="listbox"
+          className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-auto rounded-xl border border-border bg-white py-1 shadow-card"
+        >
+          {suggestions.map((s, i) => (
+            <li
+              key={s.placeId}
+              role="option"
+              aria-selected={i === active}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                void pick(s);
+              }}
+              onMouseEnter={() => setActive(i)}
+              className={`cursor-pointer px-4 py-2.5 text-sm ${
+                i === active ? "bg-brand-surface text-brand-deep" : "text-text"
+              }`}
+            >
+              {s.description}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

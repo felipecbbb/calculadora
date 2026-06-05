@@ -485,7 +485,15 @@ export function CalculatorForm({ isAuthenticated }: { isAuthenticated: boolean }
       else setDestCoords(coords);
     }
     let cp = p.postalCode ?? "";
-    if (!/^\d{5}$/.test(cp) && p.lat != null && p.lng != null) {
+    // Google no devuelve CP en resultados a nivel ciudad. SOLO para lugares en
+    // España derivamos un CP provincial sintético (prefijo + "000") que sirve
+    // de fallback al cálculo de distancia por carretera. En el extranjero NO lo
+    // hacemos: inventar un CP español falsearía el origen/destino (un "München"
+    // acabaría mostrando "08000"). La distancia ya se calcula por coordenadas
+    // (roadDistanceFromCoordsKm), así que dejamos el CP extranjero tal cual lo
+    // dé Google —o vacío si no lo da.
+    const isSpain = !p.countryCode || p.countryCode === "ES";
+    if (isSpain && !/^\d{5}$/.test(cp) && p.lat != null && p.lng != null) {
       const prov = nearestProvince(p.lat, p.lng);
       if (prov) cp = `${prov.cp}000`;
     }

@@ -55,8 +55,21 @@ export const calculatorSchema = z.object({
   disability33: z.boolean().default(false),
 
   // Bloque 3
-  originCp: z.string().regex(/^\d{5}$/, "Código postal no válido (5 dígitos)"),
-  destinationCp: z.string().regex(/^\d{5}$/, "Código postal no válido (5 dígitos)"),
+  // CP de recogida/entrega. Acepta el CP español de 5 dígitos y también
+  // formatos extranjeros (alfanuméricos, con espacios o guiones: "SW1A 2AA",
+  // "1011 AB", "1000-001", "80331"). Puede ir vacío cuando Google Places no
+  // devuelve CP para una ciudad del extranjero; en ese caso la distancia se
+  // calcula por coordenadas, no por CP.
+  originCp: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9][A-Za-z0-9 -]{0,9}$/, "Código postal no válido")
+    .or(z.literal("")),
+  destinationCp: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9][A-Za-z0-9 -]{0,9}$/, "Código postal no válido")
+    .or(z.literal("")),
   distanceKm: z.number().min(0).max(20_000),
   truckType: z.enum(TRUCK_TYPES),
 
